@@ -89,7 +89,7 @@
     <svg id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
   </button>
 </div>
-<div class="ver">v2026.10.01-09.20</div>
+<div class="ver">v2026.10.01-09.28</div>
 <div id="fallback"><div>This demo needs WebGL.<br>Please try a browser with WebGL enabled.</div></div>
 
 <script type="module">
@@ -638,10 +638,13 @@ function loop() {
   const oe = easeInOut(Math.max(0, Math.min(1, openT)));
   coverGroup.rotation.y = -Math.PI * oe;
   cardGroup.position.x = 2.55 * oe;
-  // responsive fit: keep the card fully on screen at any aspect
+  // responsive fit: card takes ~62% of the space between heading and pill
   const vH = THREE.MathUtils.degToRad(camera.fov / 2);
   const hH = Math.atan(Math.tan(vH) * camera.aspect);
-  const fit = Math.min(1, (CAM_Z * Math.tan(hH)) / 2.0, (CAM_Z * Math.tan(vH)) / 2.75);
+  const visHW = CAM_Z * Math.tan(hH);
+  const visHH = CAM_Z * Math.tan(vH);
+  const usableHH = visHH * (1 - 0.16 - 0.15); // heading above, pill below
+  const fit = Math.min(1, visHW / 2.75, usableHH / 3.9);
   const s = (1 - 0.16 * oe) * fit;
   cardGroup.scale.set(s, s, 1);
   const zOpen = (2.95 * fit + 0.3) / Math.tan(hH);
