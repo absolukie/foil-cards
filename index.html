@@ -89,7 +89,7 @@
     <svg id="playIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.2-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg>
   </button>
 </div>
-<div class="ver">v2026.10.01-09.05</div>
+<div class="ver">v2026.10.01-09.20</div>
 <div id="fallback"><div>This demo needs WebGL.<br>Please try a browser with WebGL enabled.</div></div>
 
 <script type="module">
@@ -291,6 +291,9 @@ function paintFront(card, idx) {
   map.font = '190px "Great Vibes", "Snell Roundhand", cursive';
   foil.font = '190px "Great Vibes", "Snell Roundhand", cursive';
   map.shadowColor = 'rgba(60,50,40,0.35)'; map.shadowBlur = 6; map.shadowOffsetY = 3;
+  // stamped-foil bevel: dark offset under the gradient face
+  map.fillStyle = silver ? 'rgba(110,120,142,0.6)' : 'rgba(140,95,30,0.6)';
+  map.fillText(card.title, TEX_W / 2 + 3, ty + 5);
   map.fillStyle = foilGrad(map, ty - 150, ty + 60);
   map.fillText(card.title, TEX_W / 2, ty);
   foil.fillStyle = '#fff';
@@ -360,9 +363,20 @@ function paintInsideRight(card) {
 function paintBack(card) {
   const [mapC, map] = cv(TEX_W, TEX_H);
   map.fillStyle = card.paper; map.fillRect(0, 0, TEX_W, TEX_H);
+  // little barcode, like a real card back
+  map.fillStyle = 'rgba(30,32,40,0.6)';
+  let bx = TEX_W / 2 - 72;
+  for (let i = 0; i < 26; i++) {
+    const wdt = 2 + ((i * 7) % 3) * 2;
+    map.fillRect(bx, TEX_H - 250, wdt, 58);
+    bx += wdt + 2 + ((i * 5) % 3);
+  }
+  map.fillStyle = 'rgba(30,32,40,0.45)'; map.textAlign = 'center';
+  map.font = '30px -apple-system, system-ui, sans-serif';
+  map.fillText('gilded · foil greeting cards', TEX_W / 2, TEX_H - 160);
   map.fillStyle = 'rgba(0,0,0,0.14)'; map.textAlign = 'center';
   map.font = '64px "Great Vibes", cursive';
-  map.fillText('Gilded', TEX_W / 2, TEX_H - 120);
+  map.fillText('Gilded', TEX_W / 2, TEX_H - 60);
   const rnd = mulberry32(31);
   paperGrain(map, rnd, 0.05);
   const [eC, e] = cv(8, 8);
@@ -435,31 +449,56 @@ float vnoise(vec2 p){
   return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
              mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+// tiny procedural studio: gradient + key softbox + rim strip + floor bounce
+vec3 envColor(vec3 R){
+  vec3 col = mix(vec3(0.15, 0.17, 0.22), vec3(0.52, 0.55, 0.62), smoothstep(-0.5, 0.9, R.y));
+  float key = pow(max(dot(R, normalize(vec3(-0.45, 0.75, 0.5))), 0.0), 16.0);
+  col += vec3(1.0, 0.97, 0.92) * key * 1.7;
+  float strip = pow(max(dot(R, normalize(vec3(0.75, 0.05, -0.35))), 0.0), 42.0);
+  col += vec3(0.75, 0.82, 1.0) * strip * 0.9;
+  float low = pow(max(dot(R, normalize(vec3(0.1, -1.0, 0.2))), 0.0), 6.0);
+  col += vec3(0.9, 0.85, 0.8) * low * 0.25;
+  return col;
+}
 void main(){
   vec3 albedo = texture2D(uMap, vUv).rgb;
   float e = 1.5 / 1024.0;
   float b0 = texture2D(uBump, vUv).r;
   float bx = texture2D(uBump, vUv + vec2(e, 0.0)).r - b0;
   float by = texture2D(uBump, vUv + vec2(0.0, e)).r - b0;
-  vec3 N = normalize(vN + vec3(-bx * 2.4, -by * 2.4, 0.0));
+  // gentle paper unevenness so reflections feel physical, not CG-flat
+  vec2 wob = vec2(vnoise(vUv * 3.1) - 0.5, vnoise(vUv * 2.7 + 13.0) - 0.5);
+  vec3 N = normalize(vN + vec3(-bx * 3.0 + wob.x * 0.10, -by * 3.0 + wob.y * 0.10, 0.0));
   vec3 V = normalize(cameraPosition - vWp);
   vec3 L = normalize(uLightDir);
   float ndl = max(dot(N, L), 0.0);
-  float grain = vnoise(vUv * vec2(700.0, 1000.0)) * 0.045;
-  vec3 col = albedo * (0.74 + 0.36 * ndl) - grain;
+  // paper: fine grain + long fibers + roughness variation
+  float grain = vnoise(vUv * vec2(700.0, 1000.0)) * 0.05;
+  float fiber = vnoise(vec2(vUv.x * 36.0, vUv.y * 900.0)) * 0.04;
+  float rough = 0.9 + vnoise(vUv * 8.0) * 0.2;
+  vec3 col = albedo * (0.72 + 0.38 * ndl * rough) - (grain + fiber);
+  // subtle edge AO, like a real cut card edge
+  float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+  col *= 0.93 + 0.07 * smoothstep(0.0, 0.035, edge);
+
   float mask = texture2D(uFoil, vUv).r;
   if (mask > 0.004) {
+    // real foil: a mirror first, rainbow diffraction second
+    vec3 R = reflect(-V, N);
+    vec3 env = envColor(R);
     float ndv = clamp(dot(N, V), 0.0, 1.0);
-    float hue = fract(0.58 + ndv * 1.35 - ndl * 1.1 + vnoise(vUv * 36.0) * 0.22 + uTime * 0.025);
-    vec3 holo = hsv2rgb(vec3(hue, 0.5, 1.0));
-    float sparkle = step(0.986, vnoise(vUv * vec2(1500.0, 2300.0) + vec2(uTime * 0.6, -uTime * 0.4)));
-    vec3 metal = mix(vec3(0.93, 0.95, 0.99), vec3(1.0, 0.84, 0.52), uWarmth);
-    float glint = pow(ndv, 1.6) * 0.65 + pow(max(dot(reflect(-L, N), V), 0.0), 28.0) * 1.4;
-    vec3 foilCol = mix(metal * (0.5 + 0.85 * glint), holo * (0.45 + 1.0 * glint), 0.5)
-                 + sparkle * vec3(1.1);
+    float diffAngle = sin(ndv * 3.14159);
+    float hue = fract(ndv * 1.9 + vnoise(vUv * 44.0) * 0.28 + uTime * 0.018);
+    vec3 irid = hsv2rgb(vec3(hue, 0.5, 1.0));
+    float sparkle = step(0.984, vnoise(vUv * vec2(1600.0, 2400.0) + vec2(uTime * 0.5, -uTime * 0.35)));
+    vec3 metal = mix(vec3(0.96, 0.97, 1.0), vec3(1.0, 0.86, 0.58), uWarmth);
+    float spec = pow(max(dot(R, L), 0.0), 70.0);
+    vec3 foilCol = env * metal * (0.5 + 0.8 * ndv);
+    foilCol += irid * (0.2 + 0.8 * diffAngle) * 0.5;
+    foilCol += vec3(1.0, 0.99, 0.97) * spec * 1.6 + sparkle * vec3(1.15);
     float lum = dot(albedo, vec3(0.299, 0.587, 0.114));
-    foilCol *= (0.75 + 0.5 * lum);
-    col = mix(col, foilCol, clamp(mask * 1.15, 0.0, 1.0));
+    foilCol *= (0.72 + 0.56 * lum);
+    col = mix(col, foilCol, clamp(mask * 1.2, 0.0, 1.0));
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
